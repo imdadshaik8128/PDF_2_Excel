@@ -1,0 +1,5 @@
+eel
+PyPDF2
+PyMuPDF
+openpyxl
+pyinstaller
