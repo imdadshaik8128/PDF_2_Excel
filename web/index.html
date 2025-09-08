@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Excel Converter</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+        input[type="file"] {
+            border: 2px dashed #cbd5e1; /* border-gray-300 */
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        input[type="file"]:hover {
+            border-color: #93c5fd; /* border-blue-300 */
+            background-color: #f0f9ff; /* bg-blue-50 */
+        }
+        .btn-primary {
+            background-image: linear-gradient(to right, #6366f1, #8b5cf6); /* indigo-500 to violet-500 */
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 8px rgba(99, 102, 241, 0.3);
+        }
+        .btn-primary:hover {
+            background-image: linear-gradient(to right, #4f46e5, #7c3aed); /* indigo-600 to violet-600 */
+            box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #ffffff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="container card p-8 mx-auto w-full">
+        <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">PDF to Excel Converter</h1>
+        <p class="text-gray-600 text-center mb-8">Upload your PDF document to extract structured data into an Excel file.</p>
+
+        <div class="mb-6">
+            <label for="pdfInput" class="block text-lg font-medium text-gray-700 mb-4">Select PDF File:</label>
+            <input type="file" id="pdfInput" accept=".pdf" class="w-full text-gray-700 cursor-pointer focus:outline-none">
+        </div>
+
+        <button id="convertButton" 
+                class="btn-primary w-full text-white font-semibold py-3 px-6 rounded-lg shadow-md flex items-center justify-center space-x-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">
+            <span id="buttonText">Convert to Excel</span>
+            <div id="loadingSpinner" class="spinner hidden"></div>
+        </button>
+
+        <div id="messageContainer" class="mt-8 text-center text-sm">
+            <!-- Messages will be displayed here -->
+        </div>
+
+        <div id="downloadContainer" class="mt-8 hidden text-center">
+            <a id="downloadLink" href="#"
+               class="inline-block bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">
+                Download Excel File
+            </a>
+        </div>
+    </div>
+
+    <!-- Eel.js must be loaded before your custom script -->
+    <script type="text/javascript" src="/eel.js"></script>
+
+    <script>
+        const pdfInput = document.getElementById('pdfInput');
+        const convertButton = document.getElementById('convertButton');
+        const messageContainer = document.getElementById('messageContainer');
+        const downloadContainer = document.getElementById('downloadContainer');
+        const downloadLink = document.getElementById('downloadLink');
+        const buttonText = document.getElementById('buttonText');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+
+        function showMessage(text, type = 'info') {
+            messageContainer.innerHTML = `<p class="${type === 'error' ? 'text-red-600' : 'text-gray-700'}">${text}</p>`;
+            downloadContainer.classList.add('hidden');
+        }
+
+        function setLoading(isLoading) {
+            convertButton.disabled = isLoading;
+            if (isLoading) {
+                buttonText.textContent = 'Processing...';
+                loadingSpinner.classList.remove('hidden');
+                messageContainer.innerHTML = '';
+                downloadContainer.classList.add('hidden');
+            } else {
+                buttonText.textContent = 'Convert to Excel';
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+
+        convertButton.addEventListener('click', async () => {
+            const file = pdfInput.files[0];
+            if (!file) {
+                showMessage('Please select a PDF file first.', 'error');
+                return;
+            }
+
+            setLoading(true);
+            showMessage('Preparing PDF for processing...');
+
+            try {
+                // Read PDF file as ArrayBuffer, then convert to Base64
+                const arrayBuffer = await file.arrayBuffer();
+                const byteArray = new Uint8Array(arrayBuffer);
+                let binaryString = '';
+                for (let i = 0; i < byteArray.byteLength; i++) {
+                    binaryString += String.fromCharCode(byteArray[i]);
+                }
+                const pdfBase64 = btoa(binaryString); // Encode to Base64
+
+                showMessage('Sending PDF data to Python backend...');
+                
+                // Call the exposed Python function
+                const result = await eel.parse_pdf_data_to_excel_eel(pdfBase64, file.name)();
+
+                if (result.error) {
+                    showMessage(`Error from Python: ${result.error}`, 'error');
+                } else if (result.success && result.excel_data_base64) {
+                    const excelData = result.excel_data_base64;
+                    const filename = result.filename.replace(/\.pdf$/i, '_Parsed.xlsx') || 'parsed_data.xlsx';
+
+                    // Create a Blob from the Base64 Excel data
+                    const byteCharacters = atob(excelData);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArrayBlob = new Uint8Array(byteNumbers);
+                    const excelBlob = new Blob([byteArrayBlob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+                    // Create a download link
+                    const url = URL.createObjectURL(excelBlob);
+                    downloadLink.href = url;
+                    downloadLink.download = filename; // Set the proposed filename
+                    
+                    showMessage('Conversion complete! Click the download button below.', 'info');
+                    downloadContainer.classList.remove('hidden');
+                } else {
+                    showMessage('An unknown error occurred during conversion.', 'error');
+                }
+
+            } catch (error) {
+                console.error('Error during conversion:', error);
+                showMessage(`Unexpected error during conversion: ${error.message}.`, 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+    </script>
+</body>
+</html>
